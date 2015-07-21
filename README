@@ -1,0 +1,145 @@
+=================
+PDB_Tool (v4.72)
+date: 2015.07.20
+=================
+
+Title:
+PDB_Tool: a versatile tool to process PDB file
+
+Author: 
+Sheng Wang 
+
+Contact email: 
+realbigws@gmail.com 
+
+--------------------------------------------------------
+
+
+
+=========
+Abstract:
+=========
+
+1. Convert official PDB to compact form which only contains the necessary ATOM co-ordinate information.
+   e.g.,  ./PDB_Tool -i examples/1paz.pdb -r A -o 1pazA.pdb
+
+2. Extract structural features from input PDB file by '-F' option.
+   e.g.,  ./PDB_Tool -i examples/1paz.pdb -r A -o 1pazA.pdb -F 3
+
+3. Specify residue range by '-r' option, which could be applied to process SCOP domain.
+   e.g.,  ./PDB_Tool -i examples/2c2l.pdb -r A:24-224 -o d2c2la1.pdb
+
+
+
+========
+Install:
+========
+
+1. download the package
+
+git clone https://github.com/realbigws/PDB_Tool
+cd PDB_Tool/
+
+--------------
+
+2. compile
+
+cd source_code/
+	make
+	mv PDB_Tool ../
+cd ../
+
+
+
+================
+Running example:
+================
+
+./PDB_Tool -i examples/1paz.pdb -r A -o 1pazA.pdb
+
+
+
+
+=================
+PDB_Tool options:
+=================
+
+---------------------------------------
+structural features output by -F option
+---------------------------------------
+
+(1) AMI (amino acid sequence)
+(2) CLE (conformational letter sequence in 17-state, defined according to [Wang & Zheng] )
+(3) SSE (secondary structure element sequence in 8-state, defined according to [Kabsch & Sander] )
+(4) ACC (relative solvent accessbility value calculated by [Kabsch & Sander], as well as the 3-state defined as [Ma & Wang] )
+(5) FEAT (structural features containing AMI,CLE,SSE,ACC,rACC; contact number with CA and CB; and co-ordinate of CA and CB )
+
+
+feature file example
+--------------------
+-F 1 to output AMI,CLE,SSE
+-F 2 to output ACC and rACC
+-F 4 to output FEAT     
+           
+Note that these output files could be combined, such as 
+-F 3 to output AMI,CLE,SSE, and ACC,rACC files
+-F 5 to output AMI,CLE,SSE, and FEAT files
+
+
+
+----------------------------------
+specify residue range by -r option
+----------------------------------
+
+symbol explanation:
+
+':' for PDB numbering, that the range is selected according to the residue number in the PDB file.
+'.' for SEQUENCE numbering, that the range is selected according to sequential order, starting from 1.
+'-' to indicate a certain beginning till the end.
+'+' to indicate a certain beginning followed by the length range.
+'@' to indicate the beginning or the ending of a certain chain.
+',' to seperate between two PDB chains.
+'!' to select all chains in the structure.
+'_' to use the first chain in the structure.
+
+
+range example               description
+-------------               -----------
+A:21-179,B.45-@             Two segments from the input structure are selected.
+                            For chain A we select from residue 21 to residue 179 according to PDB numbering,
+                            whereas for chain B we select from position 45 to the end in sequential order.
+
+
+Note that the range symbol definition above is compatible with SCOP. 
+    Then PDB_Tool could be applied to process SCOP domain defined as [Brenner et.al], for instance,
+
+SCOP domain:
+    d2c2la1 a.118.8.1 (A:24-224)
+range process:
+    ./PDB_Tool -i 2c2l.pdb -r A:24-224 -o d2c2la1.pdb
+
+
+
+
+
+===========
+References:
+===========
+
+[Wang & Zheng]: CLePAPS: fast pair alignment of protein structures based on conformational letters
+      Sheng Wang and Wei-mou Zheng
+      J Bioinform Comput Biol. 2008 Apr;6(2):347-66.
+
+[Kabsch & Sander]: Dictionary of protein secondary structure: pattern recognition of hydrogen-bonded and geometrical features
+      Kabsch W, Sander C.
+      Biopolymers. 1983 Dec;22(12):2577-637.
+
+[Ma & Wang]: AcconPred: Predicting Solvent Accessibility and Contact Number Simultaneously by a Multitask Learning Framework under the Conditional Neural Fields Model
+      Jianzhu Ma and Sheng Wang
+      BioMed Research International. 2015 
+
+[Brenner et.al]: The ASTRAL compendium for protein structure and sequence analysis
+      Steven E. Brenner,a Patrice Koehl, and Michael Levitt
+      Nucleic Acids Res. 2000 Jan 1; 28(1): 254-256.
+
+
