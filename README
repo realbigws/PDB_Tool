@@ -37,7 +37,7 @@ Install:
 
 1. download the package
 
-git clone https://github.com/realbigws/PDB_Tool
+git clone --recursive https://github.com/realbigws/PDB_Tool
 cd PDB_Tool/
 
 --------------
@@ -46,7 +46,6 @@ cd PDB_Tool/
 
 cd source_code/
 	make
-	mv PDB_Tool ../
 cd ../
 
 
