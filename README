@@ -91,7 +91,7 @@ specify residue range by -r option
 ----------------------------------
 
 symbol explanation:
-
+-------------------
 ':' for PDB numbering, that the range is selected according to the residue number in the PDB file.
 '.' for SEQUENCE numbering, that the range is selected according to sequential order, starting from 1.
 '-' to indicate a certain beginning till the end.
@@ -102,17 +102,17 @@ symbol explanation:
 '_' to use the first chain in the structure.
 
 
-example               
--------
+example:   
+--------
 A:21-179,B.45-@
 
 
-description                                                                     
------------                                                                     
+description:
+------------
 Two segments from the input structure are selected.                             
 For chain A we select from residue 21 to residue 179 according to PDB numbering,
 whereas for chain B we select from position 45 to the end in sequential order.  
----------------------------------------
+--------------------------------------------------------------------------------
 
 Note that the range symbol definition above is compatible with SCOP. 
     Then PDB_Tool could be applied to process SCOP domain defined as [Brenner et.al], for instance,
