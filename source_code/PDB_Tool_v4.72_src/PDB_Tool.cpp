@@ -14,7 +14,7 @@ using namespace std;
 void print_help_msg(void) 
 {
 	cout << "========================================================|" << endl;
-	cout << "PDB_Tool  (version 4.75) [2017.02.25]                   |" << endl;
+	cout << "PDB_Tool  (version 4.75) [2016.02.25]                   |" << endl;
 	cout << "          Transform original .PDB file to compact form  |" << endl;
 	cout << "Usage:   ./PDB_Tool <-i input> <-r range> <-o output>   |" << endl;
 	cout << "Or,      ./PDB_Tool <-i inroot> <-L list> <-o outroot>  |" << endl;
