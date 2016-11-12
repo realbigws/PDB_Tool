@@ -65,7 +65,7 @@ Usage:
 
 ========================================================|
 PDB_Tool  (version 4.75) [2016.02.25]                   |
-          Transform original .PDB file to compact form  |
+          a versatile tool to process PDB file          |
 Usage:   ./PDB_Tool <-i input> <-r range> <-o output>   |
 Or,      ./PDB_Tool <-i inroot> <-L list> <-o outroot>  |
 --------------------------------------------------------|
