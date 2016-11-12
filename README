@@ -59,6 +59,53 @@ git submodule foreach --recursive git pull origin master
 
 
 
+======
+Usage:
+======
+
+========================================================|
+PDB_Tool  (version 4.75) [2016.02.25]                   |
+          Transform original .PDB file to compact form  |
+Usage:   ./PDB_Tool <-i input> <-r range> <-o output>   |
+Or,      ./PDB_Tool <-i inroot> <-L list> <-o outroot>  |
+--------------------------------------------------------|
+For <-i input> input type,                              |
+-i input  : input original PDB file, e.g., 1col.pdb     |
+-r range  : input residue range, e.g., A:1-51           |
+-o output : output PDB file, e.g., 1colA.pdb            |
+--------------------------------------------------------|
+For <-L list> input type,                               |
+-i inroot  : input directory of original PDBs           |
+-o outroot : output directory for generated PDBs        |
+The rows in <list> indicate [input range output]        |
+          e.g.,  1col.pdb A:1-51 1colA.pdb              |
+========================================================|
+                Primary options                         |
+--------------------------------------------------------|
+-M mode : Specify the atoms for output.                 |
+          -2,  output CA+CB                             |
+          -1,  output CA                                |
+           0,  output backbone+CB                       |
+          [1], output full atoms (Set as default)       |
+--------------------------------------------------------|
+-N num  : Specify the numbering type for output.        |
+          -1,  full sequential, for atom and residue    |
+           0,  part sequential, for atom only           |
+          [1], PDB numbering (Set as default)           |
+--------------------------------------------------------|
+                Additional options                      |
+--------------------------------------------------------|
+The following arguments for both input types            |
+        -C 1 to consider non-CA atoms                   |
+        -R 1 to reconstruct missing CB and backbone     |
+        -F 1 for AMI,CLE,SSE; 2 for ACC; 4 for FEAT     |
+           these output files could be combined         |
+The following arguments only for <-L list> input type   |
+        -G 1 to output three log files                  |
+========================================================|
+
+
+
 ================
 Running example:
 ================
