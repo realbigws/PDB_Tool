@@ -29,6 +29,8 @@ Abstract:
 3. Specify residue range by '-r' option, which could be applied to process SCOP domain.
    e.g.,  ./PDB_Tool -i examples/2c2l.pdb -r A:24-224 -o d2c2la1.pdb
 
+4. Fix the missing main-chain and/or side-chain atoms by '-R 1' option.
+   e.g.,  ./PDB_Tool -i examples/1paz_caonly.pdb -R 1 -o 1pazA_fix.pdb 
 
 
 ========
