@@ -1,6 +1,6 @@
 =================
-PDB_Tool (v4.75)
-date: 2016.02.25
+PDB_Tool (v4.80)
+date: 2018.05.20
 =================
 
 Title:
@@ -64,7 +64,7 @@ Usage:
 ======
 
 ========================================================|
-PDB_Tool  (version 4.75) [2016.02.25]                   |
+PDB_Tool  (version 4.80) [2018.05.20]                   |
           a versatile tool to process PDB file          |
 Usage:   ./PDB_Tool <-i input> <-r range> <-o output>   |
 Or,      ./PDB_Tool <-i inroot> <-L list> <-o outroot>  |
@@ -100,9 +100,12 @@ The following arguments for both input types            |
         -R 1 to reconstruct missing CB and backbone     |
         -F 1 for AMI,CLE,SSE; 2 for ACC; 4 for FEAT     |
            these output files could be combined         |
+           8 for output phi/psi/omega and theta/thor    |
+           9 for output Ca-Ca, Cb-Cb, and N-O distance  |
 The following arguments only for <-L list> input type   |
         -G 1 to output three log files                  |
 ========================================================|
+
 
 
 
