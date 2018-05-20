@@ -1,6 +1,6 @@
 #include <iostream>
-#include <ostream>
-#include <fstream>
+#include <sstream>
+#include <iomanip>
 #include "PDB_Chain_Fold.h"
 #include "Confo_Back.h"
 #include "Confo_Beta.h"
@@ -54,6 +54,7 @@ void print_help_msg(void)
 	cout << "        -F 1 for AMI,CLE,SSE; 2 for ACC; 4 for FEAT     |" << endl;
 	cout << "           these output files could be combined         |" << endl;
 	cout << "           8 for output phi/psi/omega and theta/thor    |" << endl;
+	cout << "           9 for output Ca-Ca, Cb-Cb, and N-O distance  |" << endl;
 	cout << "The following arguments only for <-L list> input type   |" << endl;
 	cout << "        -G 1 to output three log files                  |" << endl;
 	cout << "========================================================|" << endl;
@@ -471,6 +472,12 @@ void Output_Protein_Features(
 
 
 //----- output protein angles -----//
+//-> output format
+/*
+>POS  PHI  PSI  OMEGA  THETA  THOR
+....
+
+*/
 void Output_Protein_Angles(
 	string &outroot,string &outname,
 	int moln,PDB_Residue *pdb)
@@ -494,10 +501,10 @@ void Output_Protein_Angles(
 		exit(-1);
 	}
 	//output phi_psi_omega
-	string phi_psi_omega_out;
+	vector <vector <double> > phi_psi_omega_out;
 	chain_fold.print_phi_psi_omega(phi_psi_omega_out);
 	//output theta_tor
-	string theta_tor_out;
+	vector <vector <double> > theta_tor_out;
 	chain_fold.print_theta_tau(theta_tor_out);
 
 	//------ output feature files -------//
@@ -509,15 +516,102 @@ void Output_Protein_Angles(
 	}
 	else
 	{
-		//-> output phi_psi_omega to file
-		fprintf(fpp,">POS     PHI       PSI       OMEGA \n");
-		fprintf(fpp,"%s",phi_psi_omega_out.c_str());
-		//-> output theta_thor to file
-		fprintf(fpp,">POS     THETA     THOR  \n");
-		fprintf(fpp,"%s",theta_tor_out.c_str());
+		fprintf(fpp,">POS     PHI        PSI       OMEGA     THETA       THOR  \n");
+		for(int i=0;i<moln;i++)
+		{
+			//print
+			stringstream os;
+			os<<setw(4)<<i + 1<<" ";
+			os<<setw(10)<<phi_psi_omega_out.at(i).at(0) / M_PI * 180<<" ";
+			os<<setw(10)<<phi_psi_omega_out.at(i).at(1) / M_PI * 180<<" ";
+			os<<setw(10)<<phi_psi_omega_out.at(i).at(2) / M_PI * 180<<" ";
+			os<<setw(10)<<theta_tor_out.at(i).at(0) / M_PI * 180<<" ";
+			os<<setw(10)<<theta_tor_out.at(i).at(1) / M_PI * 180<<" ";
+			//out
+			string buf=os.str();
+			fprintf(fpp,"%s\n",buf.c_str());
+		}
 	}
 	fclose(fpp);
 }
+
+
+//---------- output Jinbo'style distance matrix ------------//__180520__//
+//-> example (in Hai-cang format) [starting from 1] [no gap]
+// CaCaMatrix = np.ones( (fullSeqLen, fullSeqLen), np.float16) * (-1)
+// CbCbMatrix = np.ones( (fullSeqLen, fullSeqLen), np.float16) * (-1)
+// CgCgMatrix = np.ones( (fullSeqLen, fullSeqLen), np.float16) * (-1)  -> not consider now
+// CaCgMatrix = np.ones( (fullSeqLen, fullSeqLen), np.float16) * (-1)  -> not consider now
+// NOMatrix   = np.ones( (fullSeqLen, fullSeqLen), np.float16) * (-1)
+/*
+i j <Ca-Ca> <Cb-Cb> <N-O>
+......
+
+[legend]:
+
+the first and second column is the two positions in 1-base (i.e., starting from 1).
+the third column is the Ca-Ca distance. (-1 means not available)
+the fourth column is the Cb-Cb distance. (-1 means not available)
+the fifth column is the N-O distance. (-1 means not available)
+*/
+
+void Output_Protein_Distances(
+	string &outroot,string &outname,
+	int moln,PDB_Residue *pdb)
+{
+	//init
+	int i,j;
+	//------ output feature files -------//
+	string file=outroot+"/"+outname+".distances";
+	FILE *fpp=fopen(file.c_str(),"wb");
+	if(fpp==0)
+	{
+		fprintf(stderr,"ERROR: file %s can't be opened. \n",file.c_str());
+	}
+	else
+	{
+		fprintf(fpp,">PS1  PS2    CA_CA      CB_CB      N_O      \n");
+		for(i=0;i<moln;i++)
+			for(j=0;j<moln;j++)
+			{
+				//get atoms
+				XYZ ca_i,ca_j;
+				pdb[i].get_backbone_atom( "CA ",ca_i );
+				pdb[j].get_backbone_atom( "CA ",ca_j );
+				XYZ cb_i,cb_j;
+				pdb[i].get_sidechain_atom( "CB ",cb_i );
+				pdb[j].get_sidechain_atom( "CB ",cb_j );
+				XYZ n_i,o_j;
+				pdb[i].get_backbone_atom( "N  ",n_i );
+				pdb[j].get_backbone_atom( "O  ",o_j );
+				//get distance
+				double distance;
+				vector <double> distances;
+				//-> Ca-Ca distance (symmetric)
+				distance=ca_i.distance(ca_j);
+				distances.push_back(distance);
+				//-> Cb-Cb distance (symmetric)
+				distance=cb_i.distance(cb_j);
+				distances.push_back(distance);
+				//-> N-O distance (asymmetric)
+				distance=n_i.distance(o_j);
+				distances.push_back(distance);
+				//print
+				stringstream os;
+				os<<setw(4)<<i + 1<<" ";
+				os<<setw(4)<<j + 1<<" ";
+				os<<setw(10)<<distances.at(0)<<" ";
+				os<<setw(10)<<distances.at(1)<<" ";
+				os<<setw(10)<<distances.at(2)<<" ";
+				//out
+				string buf=os.str();
+				fprintf(fpp,"%s\n",buf.c_str());
+			}
+	}
+	fclose(fpp);
+}
+
+
 
 
 
@@ -826,14 +920,20 @@ int PDB_Back_Process(string &input_dir,string &list,string &output_dir,
 			//output others
 			if(OutFifi!=0)
 			{
+				//-> basic output
 				if(OutFifi==1 || OutFifi==3 || OutFifi==5 || OutFifi==7)
 					Output_Protein_Features_AMI_SSE_CLE(outa,output,moln,pdb);
 				if(OutFifi==2 || OutFifi==3 || OutFifi==6 || OutFifi==7)
 					Output_Protein_Features_ACC(outa,output,acc_surface,moln,pdb,mcc,mcc_side,ami,acc);
 				if(OutFifi==4 || OutFifi==5 || OutFifi==6 || OutFifi==7)
 					Output_Protein_Features(outa,output,acc_surface,mol,mcb,moln,pdb,mcc,mcc_side,ami,acc);
+				//-> additionals
+				//--| angles
 				if(OutFifi==8)
 					Output_Protein_Angles(outa,output,moln,pdb);
+				//--| distances
+				if(OutFifi==9)
+					Output_Protein_Distances(outa,output,moln,pdb);
 			}
 		}
 
@@ -1049,15 +1149,20 @@ void PDB_Back_Process_Single(string &input,string &range,string &output,
 				string outroot,outname;
 				getBaseName(output,outname,'/','.');
 				getRootName(output,outroot,'/');
-				//-> output files
+				//-> basic output
 				if(OutFifi==1 || OutFifi==3 || OutFifi==5 || OutFifi==7)
 					Output_Protein_Features_AMI_SSE_CLE(outroot,outname,moln,pdb);
 				if(OutFifi==2 || OutFifi==3 || OutFifi==6 || OutFifi==7)
 					Output_Protein_Features_ACC(outroot,outname,acc_surface,moln,pdb,mcc,mcc_side,ami,acc);
 				if(OutFifi==4 || OutFifi==5 || OutFifi==6 || OutFifi==7)
 					Output_Protein_Features(outroot,outname,acc_surface,mol,mcb,moln,pdb,mcc,mcc_side,ami,acc);
+				//-> additionals
+				//--| angles
 				if(OutFifi==8)
 					Output_Protein_Angles(outroot,outname,moln,pdb);
+				//--| distances
+				if(OutFifi==9)
+					Output_Protein_Distances(outroot,outname,moln,pdb);
 			}
 		}
 	}
