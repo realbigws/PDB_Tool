@@ -480,7 +480,7 @@ void Output_Protein_Features(
 */
 void Output_Protein_Angles(
 	string &outroot,string &outname,
-	int moln,PDB_Residue *pdb)
+	int moln,PDB_Residue *pdb,string &AMI)
 {
 	//init
 	int i;
@@ -516,12 +516,13 @@ void Output_Protein_Angles(
 	}
 	else
 	{
-		fprintf(fpp,">POS     PHI        PSI       OMEGA     THETA       THOR  \n");
+		fprintf(fpp,">POS Res  PHI        PSI       OMEGA     THETA       THOR  \n");
 		for(int i=0;i<moln;i++)
 		{
 			//print
 			stringstream os;
 			os<<setw(4)<<i + 1<<" ";
+			os<<setw(1)<<AMI.at(i)<<" ";
 			os<<setw(10)<<phi_psi_omega_out.at(i).at(0) / M_PI * 180<<" ";
 			os<<setw(10)<<phi_psi_omega_out.at(i).at(1) / M_PI * 180<<" ";
 			os<<setw(10)<<phi_psi_omega_out.at(i).at(2) / M_PI * 180<<" ";
@@ -557,7 +558,7 @@ the fifth column is the N-O distance. (-1 means not available)
 
 void Output_Protein_Distances(
 	string &outroot,string &outname,
-	int moln,PDB_Residue *pdb)
+	int moln,PDB_Residue *pdb,string &AMI)
 {
 	//init
 	int i,j;
@@ -570,7 +571,7 @@ void Output_Protein_Distances(
 	}
 	else
 	{
-		fprintf(fpp,">PS1  PS2    CA_CA      CB_CB      N_O      \n");
+		fprintf(fpp,">PS1  PS2 A A   CA_CA      CB_CB      N_O      \n");
 		for(i=0;i<moln;i++)
 			for(j=0;j<moln;j++)
 			{
@@ -600,6 +601,8 @@ void Output_Protein_Distances(
 				stringstream os;
 				os<<setw(4)<<i + 1<<" ";
 				os<<setw(4)<<j + 1<<" ";
+				os<<setw(1)<<AMI.at(i)<<" ";
+				os<<setw(1)<<AMI.at(j)<<" ";
 				os<<setw(10)<<distances.at(0)<<" ";
 				os<<setw(10)<<distances.at(1)<<" ";
 				os<<setw(10)<<distances.at(2)<<" ";
@@ -930,10 +933,16 @@ int PDB_Back_Process(string &input_dir,string &list,string &output_dir,
 				//-> additionals
 				//--| angles
 				if(OutFifi==8)
-					Output_Protein_Angles(outa,output,moln,pdb);
+				{
+					string AMI=ami;
+					Output_Protein_Angles(outa,output,moln,pdb,AMI);
+				}
 				//--| distances
 				if(OutFifi==9)
-					Output_Protein_Distances(outa,output,moln,pdb);
+				{
+					string AMI=ami;
+					Output_Protein_Distances(outa,output,moln,pdb,AMI);
+				}
 			}
 		}
 
@@ -1159,10 +1168,16 @@ void PDB_Back_Process_Single(string &input,string &range,string &output,
 				//-> additionals
 				//--| angles
 				if(OutFifi==8)
-					Output_Protein_Angles(outroot,outname,moln,pdb);
+				{
+					string AMI=ami;
+					Output_Protein_Angles(outroot,outname,moln,pdb,AMI);
+				}
 				//--| distances
 				if(OutFifi==9)
-					Output_Protein_Distances(outroot,outname,moln,pdb);
+				{
+					string AMI=ami;
+					Output_Protein_Distances(outroot,outname,moln,pdb,AMI);
+				}
 			}
 		}
 	}
