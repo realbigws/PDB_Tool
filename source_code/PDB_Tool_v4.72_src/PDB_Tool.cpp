@@ -1,3 +1,6 @@
+#include <iostream>
+#include <ostream>
+#include <fstream>
 #include "PDB_Chain_Fold.h"
 #include "Confo_Back.h"
 #include "Confo_Beta.h"
@@ -14,7 +17,7 @@ using namespace std;
 void print_help_msg(void) 
 {
 	cout << "========================================================|" << endl;
-	cout << "PDB_Tool  (version 4.75) [2016.02.25]                   |" << endl;
+	cout << "PDB_Tool  (version 4.80) [2018.05.20]                   |" << endl;
 	cout << "          a versatile tool to process PDB file          |" << endl;
 	cout << "Usage:   ./PDB_Tool <-i input> <-r range> <-o output>   |" << endl;
 	cout << "Or,      ./PDB_Tool <-i inroot> <-L list> <-o outroot>  |" << endl;
@@ -50,6 +53,7 @@ void print_help_msg(void)
 	cout << "        -R 1 to reconstruct missing CB and backbone     |" << endl;
 	cout << "        -F 1 for AMI,CLE,SSE; 2 for ACC; 4 for FEAT     |" << endl;
 	cout << "           these output files could be combined         |" << endl;
+	cout << "           8 for output phi/psi/omega and theta/thor    |" << endl;
 	cout << "The following arguments only for <-L list> input type   |" << endl;
 	cout << "        -G 1 to output three log files                  |" << endl;
 	cout << "========================================================|" << endl;
@@ -465,6 +469,58 @@ void Output_Protein_Features(
 }
 
 
+
+//----- output protein angles -----//
+void Output_Protein_Angles(
+	string &outroot,string &outname,
+	int moln,PDB_Residue *pdb)
+{
+	//init
+	int i;
+	int retv;
+	PDB_Chain_Fold chain_fold;
+	chain_fold.initialize_simple(moln,' ');
+	for(i=0;i<moln;i++)chain_fold.set_residue(i,pdb[i]);
+	//calculate phi_psi_omega
+	if(chain_fold.calculate_phi_psi_omega()!=0)
+	{
+		fprintf(stderr,"phi_psi_omega calculation cailed \n");
+		exit(-1);
+	}
+	//calculate theta_tor
+	if(chain_fold.calculate_theta_tau()!=0)
+	{
+		fprintf(stderr,"theta_tau calculation cailed \n");
+		exit(-1);
+	}
+	//output phi_psi_omega
+	string phi_psi_omega_out;
+	chain_fold.print_phi_psi_omega(phi_psi_omega_out);
+	//output theta_tor
+	string theta_tor_out;
+	chain_fold.print_theta_tau(theta_tor_out);
+
+	//------ output feature files -------//
+	string file=outroot+"/"+outname+".angles";
+	FILE *fpp=fopen(file.c_str(),"wb");
+	if(fpp==0)
+	{
+		fprintf(stderr,"ERROR: file %s can't be opened. \n",file.c_str());
+	}
+	else
+	{
+		//-> output phi_psi_omega to file
+		fprintf(fpp,">POS     PHI       PSI       OMEGA \n");
+		fprintf(fpp,"%s",phi_psi_omega_out.c_str());
+		//-> output theta_thor to file
+		fprintf(fpp,">POS     THETA     THOR  \n");
+		fprintf(fpp,"%s",theta_tor_out.c_str());
+	}
+	fclose(fpp);
+}
+
+
+
 //==================== PDB_Back_Process ===============// (process list)
 //[list_style]
 //first_line: input_dir
@@ -776,6 +832,8 @@ int PDB_Back_Process(string &input_dir,string &list,string &output_dir,
 					Output_Protein_Features_ACC(outa,output,acc_surface,moln,pdb,mcc,mcc_side,ami,acc);
 				if(OutFifi==4 || OutFifi==5 || OutFifi==6 || OutFifi==7)
 					Output_Protein_Features(outa,output,acc_surface,mol,mcb,moln,pdb,mcc,mcc_side,ami,acc);
+				if(OutFifi==8)
+					Output_Protein_Angles(outa,output,moln,pdb);
 			}
 		}
 
@@ -998,6 +1056,8 @@ void PDB_Back_Process_Single(string &input,string &range,string &output,
 					Output_Protein_Features_ACC(outroot,outname,acc_surface,moln,pdb,mcc,mcc_side,ami,acc);
 				if(OutFifi==4 || OutFifi==5 || OutFifi==6 || OutFifi==7)
 					Output_Protein_Features(outroot,outname,acc_surface,mol,mcb,moln,pdb,mcc,mcc_side,ami,acc);
+				if(OutFifi==8)
+					Output_Protein_Angles(outroot,outname,moln,pdb);
 			}
 		}
 	}
