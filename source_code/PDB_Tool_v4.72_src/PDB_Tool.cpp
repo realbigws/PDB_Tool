@@ -480,7 +480,7 @@ void Output_Protein_Features(
 */
 void Output_Protein_Angles(
 	string &outroot,string &outname,
-	int moln,PDB_Residue *pdb,string &AMI)
+	int moln,PDB_Residue *pdb,char *ami)
 {
 	//init
 	int i;
@@ -522,7 +522,7 @@ void Output_Protein_Angles(
 			//print
 			stringstream os;
 			os<<setw(4)<<i + 1<<" ";
-			os<<setw(1)<<AMI.at(i)<<" ";
+			os<<setw(1)<<ami[i]<<" ";
 			os<<setw(10)<<phi_psi_omega_out.at(i).at(0) / M_PI * 180<<" ";
 			os<<setw(10)<<phi_psi_omega_out.at(i).at(1) / M_PI * 180<<" ";
 			os<<setw(10)<<phi_psi_omega_out.at(i).at(2) / M_PI * 180<<" ";
@@ -545,7 +545,7 @@ void Output_Protein_Angles(
 // CaCgMatrix = np.ones( (fullSeqLen, fullSeqLen), np.float16) * (-1)  -> not consider now
 // NOMatrix   = np.ones( (fullSeqLen, fullSeqLen), np.float16) * (-1)
 /*
-i j <Ca-Ca> <Cb-Cb> <N-O>
+i j <Ca-Ca> <Cb-Cb> <hydro_val>
 ......
 
 [legend]:
@@ -553,15 +553,34 @@ i j <Ca-Ca> <Cb-Cb> <N-O>
 the first and second column is the two positions in 1-base (i.e., starting from 1).
 the third column is the Ca-Ca distance. (-1 means not available)
 the fourth column is the Cb-Cb distance. (-1 means not available)
-the fifth column is the N-O distance. (-1 means not available)
+the fifth column is the hydro_bond value. (-1 means not available)
+
+#----------- equation of hydro_bond value ----------------#
+#-> in the order of N,Ca,C,O,H
+double Hydro_Bond::HB_Calc_Single(XYZ **HB_mol,int i,int j)
+{
+        double dho,dhc,dnc,dno;
+        dho=HB_mol[i][4].distance(HB_mol[j][3]);
+        dhc=HB_mol[i][4].distance(HB_mol[j][2]);
+        dno=HB_mol[i][0].distance(HB_mol[j][3]);
+        dnc=HB_mol[i][0].distance(HB_mol[j][2]);
+        return (332.0*0.42*0.2*(1.0/dno+1.0/dhc-1.0/dho-1.0/dnc));
+}
+
 */
 
 void Output_Protein_Distances(
-	string &outroot,string &outname,
-	int moln,PDB_Residue *pdb,string &AMI)
+	string &outroot,string &outname,Hydro_Bond *hydro_bond,
+	int moln,PDB_Residue *pdb,XYZ **mcc, int *mcc_side,char *ami)
 {
 	//init
 	int i,j;
+	//calc hydro_bond
+	for(i=0;i<moln;i++)pdb[i].get_XYZ_array(mcc[i],mcc_side[i]);
+	vector <vector <double> > hb_mat;
+	hydro_bond->HB_Input_Mol(mcc,ami,moln);
+	hydro_bond->HB_Calc_Hydro_Bond(hb_mat);
+
 	//------ output feature files -------//
 	string file=outroot+"/"+outname+".distances";
 	FILE *fpp=fopen(file.c_str(),"wb");
@@ -571,7 +590,7 @@ void Output_Protein_Distances(
 	}
 	else
 	{
-		fprintf(fpp,">PS1  PS2 A A   CA_CA      CB_CB      N_O      \n");
+		fprintf(fpp,">PS1  PS2 A A   CA_CA      CB_CB      HB_val      \n");
 		for(i=0;i<moln;i++)
 			for(j=0;j<moln;j++)
 			{
@@ -582,9 +601,6 @@ void Output_Protein_Distances(
 				XYZ cb_i,cb_j;
 				pdb[i].get_sidechain_atom( "CB ",cb_i );
 				pdb[j].get_sidechain_atom( "CB ",cb_j );
-				XYZ n_i,o_j;
-				pdb[i].get_backbone_atom( "N  ",n_i );
-				pdb[j].get_backbone_atom( "O  ",o_j );
 				//get distance
 				double distance;
 				vector <double> distances;
@@ -594,18 +610,17 @@ void Output_Protein_Distances(
 				//-> Cb-Cb distance (symmetric)
 				distance=cb_i.distance(cb_j);
 				distances.push_back(distance);
-				//-> N-O distance (asymmetric)
-				distance=n_i.distance(o_j);
-				distances.push_back(distance);
+				//-> HB value
+				double hb_val=hb_mat[i][j];
 				//print
 				stringstream os;
 				os<<setw(4)<<i + 1<<" ";
 				os<<setw(4)<<j + 1<<" ";
-				os<<setw(1)<<AMI.at(i)<<" ";
-				os<<setw(1)<<AMI.at(j)<<" ";
+				os<<setw(1)<<ami[i]<<" ";
+				os<<setw(1)<<ami[j]<<" ";
 				os<<setw(10)<<distances.at(0)<<" ";
 				os<<setw(10)<<distances.at(1)<<" ";
-				os<<setw(10)<<distances.at(2)<<" ";
+				os<<setw(10)<<hb_val<<" ";
 				//out
 				string buf=os.str();
 				fprintf(fpp,"%s\n",buf.c_str());
@@ -636,6 +651,7 @@ int PDB_Back_Process(string &input_dir,string &list,string &output_dir,
 	Confo_Beta *confo_beta=new Confo_Beta(totlen);
 	Confo_Back *confo_back=new Confo_Back(totlen);
 	Acc_Surface *acc_surface=new Acc_Surface(totlen);
+	Hydro_Bond *hydro_bond=new Hydro_Bond(totlen);
 	//init
 	ifstream fin;
 	string buf;
@@ -796,6 +812,7 @@ int PDB_Back_Process(string &input_dir,string &list,string &output_dir,
 				delete confo_beta;
 				delete confo_back;
 				delete acc_surface;
+				delete hydro_bond;
 				//create
 				pdb=new PDB_Residue[totlen];
 				mol=new XYZ[totlen];
@@ -809,6 +826,7 @@ int PDB_Back_Process(string &input_dir,string &list,string &output_dir,
 				confo_beta=new Confo_Beta(totlen);
 				confo_back=new Confo_Back(totlen);
 				acc_surface=new Acc_Surface(totlen);
+				hydro_bond=new Hydro_Bond(totlen);
 				//memory limit
 				mol_input.MEMORY_LIMIT=totlen;
 			}
@@ -933,16 +951,10 @@ int PDB_Back_Process(string &input_dir,string &list,string &output_dir,
 				//-> additionals
 				//--| angles
 				if(OutFifi==8)
-				{
-					string AMI=ami;
-					Output_Protein_Angles(outa,output,moln,pdb,AMI);
-				}
+					Output_Protein_Angles(outa,output,moln,pdb,ami);
 				//--| distances
 				if(OutFifi==9)
-				{
-					string AMI=ami;
-					Output_Protein_Distances(outa,output,moln,pdb,AMI);
-				}
+					Output_Protein_Distances(outa,output,hydro_bond,moln,pdb,mcc,mcc_side,ami);
 			}
 		}
 
@@ -962,6 +974,7 @@ int PDB_Back_Process(string &input_dir,string &list,string &output_dir,
 	delete confo_beta;
 	delete confo_back;
 	delete acc_surface;
+	delete hydro_bond;
 	fin.close();
 	fin.clear();
 	return wwscount;
@@ -987,6 +1000,7 @@ void PDB_Back_Process_Single(string &input,string &range,string &output,
 	Confo_Beta *confo_beta=new Confo_Beta(totlen);
 	Confo_Back *confo_back=new Confo_Back(totlen);
 	Acc_Surface *acc_surface=new Acc_Surface(totlen);
+	Hydro_Bond *hydro_bond=new Hydro_Bond(totlen);
 	mol_input.MODRES=1;
 	//init
 	int moln;
@@ -1045,6 +1059,7 @@ void PDB_Back_Process_Single(string &input,string &range,string &output,
 				delete confo_beta;
 				delete confo_back;
 				delete acc_surface;
+				delete hydro_bond;
 				//create
 				pdb=new PDB_Residue[totlen];
 				mol=new XYZ[totlen];
@@ -1058,6 +1073,7 @@ void PDB_Back_Process_Single(string &input,string &range,string &output,
 				confo_beta=new Confo_Beta(totlen);
 				confo_back=new Confo_Back(totlen);
 				acc_surface=new Acc_Surface(totlen);
+				hydro_bond=new Hydro_Bond(totlen);
 				//memory limit
 				mol_input.MEMORY_LIMIT=totlen;
 			}
@@ -1168,16 +1184,10 @@ void PDB_Back_Process_Single(string &input,string &range,string &output,
 				//-> additionals
 				//--| angles
 				if(OutFifi==8)
-				{
-					string AMI=ami;
-					Output_Protein_Angles(outroot,outname,moln,pdb,AMI);
-				}
+					Output_Protein_Angles(outroot,outname,moln,pdb,ami);
 				//--| distances
 				if(OutFifi==9)
-				{
-					string AMI=ami;
-					Output_Protein_Distances(outroot,outname,moln,pdb,AMI);
-				}
+					Output_Protein_Distances(outroot,outname,hydro_bond,moln,pdb,mcc,mcc_side,ami);
 			}
 		}
 	}
@@ -1195,6 +1205,7 @@ end:
 	delete confo_beta;
 	delete confo_back;
 	delete acc_surface;
+	delete hydro_bond;
 }
 
 //============== main ===============//
