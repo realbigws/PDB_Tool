@@ -54,7 +54,7 @@ void print_help_msg(void)
 	cout << "        -F 1 for AMI,CLE,SSE; 2 for ACC; 4 for FEAT     |" << endl;
 	cout << "           these output files could be combined         |" << endl;
 	cout << "           8 for output phi/psi/omega and theta/thor    |" << endl;
-	cout << "           9 for output Ca-Ca, Cb-Cb, and N-O distance  |" << endl;
+	cout << "           9 for output Ca-Ca, Cb-Cb, and hb_value      |" << endl;
 	cout << "The following arguments only for <-L list> input type   |" << endl;
 	cout << "        -G 1 to output three log files                  |" << endl;
 	cout << "========================================================|" << endl;
