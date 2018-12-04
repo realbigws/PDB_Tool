@@ -886,8 +886,8 @@ int PDB_Back_Process(string &input_dir,string &list,string &output_dir,
 				{
 					//[1]recon
 					confo_lett.btb_ori(0,0,0,moln,mol,cle);
-					confo_back->Recon_Back_WS_Main(mol,cle,moln,mbb);      //given CA, recon BackBone (N,CA,C,O,CB)
-					confo_beta->WS_Recon_Beta_21(mol,mcb,moln,ami,cle);    //given CA, recon CB
+					confo_back->Recon_Back_Main(mol,cle,moln,mbb);      //given CA, recon BackBone (N,CA,C,O,CB)
+					confo_beta->Recon_Beta_21(mol,mcb,moln,ami,cle);    //given CA, recon CB
 					//[2]assign
 					for(i=0;i<moln;i++)
 					{
@@ -1116,8 +1116,8 @@ void PDB_Back_Process_Single(string &input,string &range,string &output,
 				{
 					//[1]recon
 					confo_lett.btb_ori(0,0,0,moln,mol,cle);
-					confo_back->Recon_Back_WS_Main(mol,cle,moln,mbb);      //given CA, recon BackBone (N,CA,C,O,CB)
-					confo_beta->WS_Recon_Beta_21(mol,mcb,moln,ami,cle);    //given CA, recon CB
+					confo_back->Recon_Back_Main(mol,cle,moln,mbb);      //given CA, recon BackBone (N,CA,C,O,CB)
+					confo_beta->Recon_Beta_21(mol,mcb,moln,ami,cle);    //given CA, recon CB
 					//[2]assign
 					for(i=0;i<moln;i++)
 					{
