@@ -1,6 +1,7 @@
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+#include <algorithm>
 #include "PDB_Chain_Fold.h"
 #include "Confo_Back.h"
 #include "Confo_Beta.h"
@@ -17,7 +18,7 @@ using namespace std;
 void print_help_msg(void) 
 {
 	cout << "========================================================|" << endl;
-	cout << "PDB_Tool  (version 4.80) [2018.05.20]                   |" << endl;
+	cout << "PDB_Tool  (version 4.81) [2020.07.14]                   |" << endl;
 	cout << "          a versatile tool to process PDB file          |" << endl;
 	cout << "Usage:   ./PDB_Tool <-i input> <-r range> <-o output>   |" << endl;
 	cout << "Or,      ./PDB_Tool <-i inroot> <-L list> <-o outroot>  |" << endl;
@@ -55,6 +56,7 @@ void print_help_msg(void)
 	cout << "           these output files could be combined         |" << endl;
 	cout << "           8 for output phi/psi/omega and theta/thor    |" << endl;
 	cout << "           9 for output Ca-Ca, Cb-Cb, and hb_value      |" << endl;
+	cout << "        -m <mapping_seqres> for missing residues        |" << endl;
 	cout << "The following arguments only for <-L list> input type   |" << endl;
 	cout << "        -G 1 to output three log files                  |" << endl;
 	cout << "========================================================|" << endl;
@@ -65,6 +67,7 @@ string INPUT_NAM="";
 string INPUT_RAN="_";
 string INPUT_OUT="";
 string INPUT_LIST="";
+string INPUT_MISS="";
 int LIST_OR_SINGLE=0; //default: single
 int INPUT_MODE=1; //main (default:1)
 int INPUT_TYPE=1; //main (default:1)
@@ -89,6 +92,7 @@ static option long_options[] =
 	{"Noca",    no_argument,       NULL, 'C'},
 	{"Reco",    no_argument,       NULL, 'R'},
 	{"Fifi",    no_argument,       NULL, 'F'},
+	{"Miss",    no_argument,       NULL, 'm'},
 	{"Logf",    no_argument,       NULL, 'G'},
 	{"Warn",    no_argument,       NULL, 'W'},
 	{0, 0, 0, 0}
@@ -103,7 +107,7 @@ void process_args(int argc,char** argv)
 	while(true) 
 	{
 		int option_index=0;
-		opt=getopt_long(argc,argv,"i:r:o:L:M:N:T:C:R:F:G:W:",
+		opt=getopt_long(argc,argv,"i:r:o:L:M:N:T:C:R:F:m:G:W:",
 			   long_options,&option_index);
 		if (opt==-1)break;	
 		switch(opt) 
@@ -139,6 +143,9 @@ void process_args(int argc,char** argv)
 			case 'F':
 				INPUT_FIFI=atoi(optarg);
 				break;
+			case 'm':
+				INPUT_MISS=optarg;
+				break;
 			case 'G':
 				INPUT_LOGF=atoi(optarg);
 				break;
@@ -162,6 +169,257 @@ int Check_File_Existance(string &pdbfile)
 		return -1;
 	}
 	return 0;
+}
+
+//---------- dynamic programming ----------//
+int WWW_Advance_Align_Dyna_Prog_Double(int n1,int n2,const vector<double> &score,
+								   double GAP_OPEN1,double GAP_EXT1,double GAP_OPEN2,double GAP_EXT2,
+								   double GAP_HEAD1,double GAP_TAIL1,double GAP_HEAD2,double GAP_TAIL2,
+								   vector<pair<int,int> > & alignment,double &ali_sco)
+{
+	int i,j;
+	//input
+	int m = n1 + 1;  // +1 to account for the extra row,col in
+	int n = n2 + 1;  // the DP matrices corresponding to gaps
+	int DP_maximal=n;
+	int IN_maximal=n2;
+	//const value
+	const int _H_  = 0;
+	const int _S_  = 1;
+	const int _V_  = 2;
+
+	//create D and M
+	vector <int> D[3];      // the path (directions) matrix
+	vector <double> M[3];   // the current scores (values) matrix
+	//resize(m,n)
+	for (i = 0; i < 3; ++i) 
+	{
+		D[i].resize(m*n);
+		M[i].resize(m*n);
+	}
+	//init()
+	double IN_MIN=-1000000;
+	D[_S_][0*DP_maximal+ 0] = -1;
+	D[_H_][0*DP_maximal+ 0] = -1;
+	D[_V_][0*DP_maximal+ 0] = -1;
+	M[_S_][0*DP_maximal+ 0] = 0;
+	M[_H_][0*DP_maximal+ 0] = IN_MIN;
+	M[_V_][0*DP_maximal+ 0] = IN_MIN;
+	for (i = 1; i < m; i++) 
+	{
+		D[_S_][i*DP_maximal+ 0] = _V_;
+		D[_H_][i*DP_maximal+ 0] = _V_;
+		D[_V_][i*DP_maximal+ 0] = _V_;
+		M[_S_][i*DP_maximal+ 0] = IN_MIN;
+		M[_H_][i*DP_maximal+ 0] = IN_MIN;
+		M[_V_][i*DP_maximal+ 0] = i*GAP_HEAD1; //-(Params::GAP_OPEN + (i-1)*Params::GAP_EXT);
+	}
+	for (j = 1; j < n; j++) 
+	{
+		D[_S_][0*DP_maximal+ j] = _H_;
+		D[_H_][0*DP_maximal+ j] = _H_;
+		D[_V_][0*DP_maximal+ j] = _H_;
+		M[_S_][0*DP_maximal+ j] = IN_MIN;
+		M[_H_][0*DP_maximal+ j] = j*GAP_HEAD2; //-(Params::GAP_OPEN + (j-1)*Params::GAP_EXT);
+		M[_V_][0*DP_maximal+ j] = IN_MIN;
+	}
+	//fill(firstSeq, secondSeq, distFunc);
+	double gap_open;
+	double gap_ext;
+	double v1,v2,v3;
+	double dist;
+	for (i = 1; i < m; i++) 
+	{
+		for (j = 1; j < n; j++) 
+		{
+			//condition upper
+			if(j==n-1)
+			{
+				gap_open=GAP_TAIL1;
+				gap_ext=GAP_TAIL1;
+			}
+			else
+			{
+				gap_open=GAP_OPEN1;
+				gap_ext=GAP_EXT1;
+			}
+			v1 = M[_V_][(i-1)*DP_maximal+ j] + gap_ext;
+			v2 = M[_S_][(i-1)*DP_maximal+ j] + gap_open;
+			v3 = M[_H_][(i-1)*DP_maximal+ j] + gap_open;
+			M[_V_][i*DP_maximal+ j] = std::max(v1, std::max(v2, v3));
+			if (M[_V_][i*DP_maximal+ j] == v1) D[_V_][i*DP_maximal+ j] = _V_;
+			else if(M[_V_][i*DP_maximal+ j] == v2) D[_V_][i*DP_maximal+ j] = _S_;
+			else D[_V_][i*DP_maximal+ j] = _H_;
+			//condition left
+			if(i==m-1)
+			{
+				gap_open=GAP_TAIL2;
+				gap_ext=GAP_TAIL2;
+			}
+			else
+			{
+				gap_open=GAP_OPEN2;
+				gap_ext=GAP_EXT2;
+			}
+			v1 = M[_H_][i*DP_maximal+ j-1] + gap_ext;
+			v2 = M[_S_][i*DP_maximal+ j-1] + gap_open;
+			v3 = M[_V_][i*DP_maximal+ j-1] + gap_open;
+			M[_H_][i*DP_maximal+ j] = std::max(v1, std::max(v2, v3));
+			if (M[_H_][i*DP_maximal+ j] == v1) D[_H_][i*DP_maximal+ j] = _H_;
+			else if(M[_H_][i*DP_maximal+ j] == v2) D[_H_][i*DP_maximal+ j] = _S_;
+			else D[_H_][i*DP_maximal+ j] = _V_;
+			//condition diag
+			dist = score.at((i-1)*IN_maximal+ j-1);  //Params::K - distFunc(firstSeq[i-1], secondSeq[j-1]);
+			v1 = M[_V_][(i-1)*DP_maximal+ j-1] + dist;
+			v2 = M[_H_][(i-1)*DP_maximal+ j-1] + dist;
+			v3 = M[_S_][(i-1)*DP_maximal+ j-1] + dist;
+			M[_S_][i*DP_maximal+ j] = std::max(v1, std::max(v2, v3));
+			if (M[_S_][i*DP_maximal+ j] == v3) D[_S_][i*DP_maximal+ j] = _S_;
+			else if (M[_S_][i*DP_maximal+ j] == v1) D[_S_][i*DP_maximal+ j] = _V_;
+			else D[_S_][i*DP_maximal+ j] = _H_;
+		}
+	}
+	//build(ali, firstSeq, secondSeq, distFunc);
+	i = m-1;
+	j = n-1;
+	v1=M[_V_][i*DP_maximal+ j];
+	v2=M[_H_][i*DP_maximal+ j];
+	v3=M[_S_][i*DP_maximal+ j];
+	double maximal = std::max(v1, std::max(v2, v3));
+	int k = -1;
+	if(v3==maximal)k = _S_;
+	else if(v2==maximal)k = _H_;
+	else k = _V_;
+	//trace_back
+	alignment.clear();
+	int count = 0;
+	int matches = 0;
+	int cur_case=k;
+	int pre_case;
+	for(;;)
+	{
+		if(i==0||j==0)break;
+		pre_case=D[cur_case][i*DP_maximal+ j];
+		switch (cur_case)
+		{
+			case _S_:
+				alignment.push_back(pair<int,int>(i,j)); 
+				i--;
+				j--;
+				++matches;
+				break;
+			case _V_:
+				alignment.push_back(pair<int,int>(i,-j)); 
+				i--;
+				break;
+			case _H_:
+				alignment.push_back(pair<int,int>(-i,j)); 
+				j--;
+				break;
+			default:
+				cout << "ERROR!! -> advance_global: invalid direction D[" << k << "](" << i << ", " << j << ") = " 
+				<< D[k][i*DP_maximal+ j] << endl;
+				exit(-1);
+		}
+		cur_case=pre_case;
+		count++;
+	}
+	while (j> 0) alignment.push_back(pair<int,int>(-i,j)),j--;
+	while (i> 0) alignment.push_back(pair<int,int>(i,0)), i--;
+	reverse(alignment.begin(), alignment.end());
+	ali_sco=maximal;
+	return matches;
+}
+int Seqres_DynaProg(string &seqres,string &ami_,vector <int> &mapping)
+{
+	//--[0]check
+	int len=(int)seqres.length();
+	int totnum=(int)ami_.length();
+
+	//--[1]dynamic_programming
+	int i,j;
+	int head=0;
+	int n1=len;    //SEQRES
+	int n2=totnum; //ATOM
+	vector <double> score;
+	score.resize(len*totnum);
+	for(i=0;i<n1;i++)
+	{
+		for(j=0;j<n2;j++)
+		{
+			if(seqres[i]==ami_[j+head])score.at(i*n2+j)=10;
+			else
+			{
+				if(seqres[i]=='X'||seqres[i]=='Z'||seqres[i]=='.')score.at(i*n2+j)=0;
+				else if(ami_[j+head]=='X'||ami_[j+head]=='Z'||ami_[j+head]=='.')score.at(i*n2+j)=0;
+				else score.at(i*n2+j)=-15;
+			}
+		}
+	}
+	double sco;
+	int matchs;
+	vector<pair<int,int> > WWW_alignment;
+	matchs=WWW_Advance_Align_Dyna_Prog_Double(n1,n2,score,-11,-1,-110,-10,0,0,0,0,
+		WWW_alignment,sco);
+	int lcmp=(int)WWW_alignment.size();
+	
+	//extract
+	mapping.resize(len);
+	for(i=0;i<len;i++)mapping[i]=0; //default: NO
+	int first,second;
+	int retv=1;
+	for(i=0;i<lcmp;i++)
+	{
+		first=WWW_alignment[i].first;
+		second=WWW_alignment[i].second;
+		if(first<=0)
+		{
+			if(second>0)
+			{
+				retv=-1;
+				continue;
+			}
+		}
+		if(first>0 && second>0)
+		{
+			mapping[first-1]=1;
+		}
+	}
+	return retv;
+}
+
+//---------- read FASTA seqres ------------//
+int Read_FASTA_SEQRES(string &seqfile,string &seqres,int skip=1) //->from .fasta file
+{
+	ifstream fin;
+	string buf,temp;
+	//read
+	fin.open(seqfile.c_str(), ios::in);
+	if(fin.fail()!=0)
+	{
+		fprintf(stderr,"no such file! %s \n",seqfile.c_str());
+		exit(-1);
+	}
+	//skip
+	int i;
+	for(i=0;i<skip;i++)
+	{
+		if(!getline(fin,buf,'\n'))
+		{
+			fprintf(stderr,"file bad! %s \n",seqfile.c_str());
+			exit(-1);
+		}
+	}
+	//process
+	temp="";
+	for(;;)
+	{
+		if(!getline(fin,buf,'\n'))break;
+		temp+=buf;
+	}
+	seqres=temp;
+	//return
+	return (int)seqres.length();
 }
 
 
@@ -209,7 +467,8 @@ int Get_PDB_File_Len(string &pdbfile) //-> only suitable for pdb_BC100 pdb_file
 //------ output protein feature files -------//2015_02_20//
 //--> output AMI_SSE_CLE
 void Output_Protein_Features_AMI_SSE_CLE(
-	string &outroot,string &outname,int moln,PDB_Residue *pdb)
+	string &outroot,string &outname,int moln,PDB_Residue *pdb,
+	vector <int> &mapping,string &miss_seq)
 {
 	//init
 	int i;
@@ -248,7 +507,20 @@ void Output_Protein_Features_AMI_SSE_CLE(
 	else
 	{
 		fprintf(fpp,">%s\n",outname.c_str());
-		fprintf(fpp,"%s\n",AMI.c_str());
+		int cur=0;
+		for(i=0;i<(int)mapping.size();i++)
+		{
+			if(mapping[i]==1)
+			{
+				fprintf(fpp,"%c",AMI[cur]);
+				cur++;
+			}
+			else
+			{
+				fprintf(fpp,"-");
+			}
+		}
+		fprintf(fpp,"\n");
 		fclose(fpp);
 	}
 	//output CLE
@@ -262,7 +534,20 @@ void Output_Protein_Features_AMI_SSE_CLE(
 	else
 	{
 		fprintf(fpp,">%s\n",outname.c_str());
-		fprintf(fpp,"%s\n",CLE.c_str());
+		int cur=0;
+		for(i=0;i<(int)mapping.size();i++)
+		{
+			if(mapping[i]==1)
+			{
+				fprintf(fpp,"%c",CLE[cur]);
+				cur++;
+			}
+			else
+			{
+				fprintf(fpp,"-");
+			}
+		}
+		fprintf(fpp,"\n");
 		fclose(fpp);
 	}
 	//output SSE
@@ -276,7 +561,20 @@ void Output_Protein_Features_AMI_SSE_CLE(
 	else
 	{
 		fprintf(fpp,">%s\n",outname.c_str());
-		fprintf(fpp,"%s\n",SSE.c_str());
+		int cur=0;
+		for(i=0;i<(int)mapping.size();i++)
+		{
+			if(mapping[i]==1)
+			{
+				fprintf(fpp,"%c",SSE[cur]);
+				cur++;
+			}
+			else
+			{
+				fprintf(fpp,"-");
+			}
+		}
+		fprintf(fpp,"\n");
 		fclose(fpp);
 	}
 }
@@ -284,7 +582,8 @@ void Output_Protein_Features_AMI_SSE_CLE(
 //--> output ACC and ACC_Value
 void Output_Protein_Features_ACC(
 	string &outroot,string &outname,Acc_Surface *acc_surface,
-	int moln,PDB_Residue *pdb,XYZ **mcc,int *mcc_side,char *ami,char *acc)
+	int moln,PDB_Residue *pdb,XYZ **mcc,int *mcc_side,char *ami,char *acc,
+	vector <int> &mapping,string &miss_seq)
 {
 	//init
 	int i;
@@ -307,7 +606,20 @@ void Output_Protein_Features_ACC(
 	else
 	{
 		fprintf(fpp,">%s\n",outname.c_str());
-		fprintf(fpp,"%s\n",acc);
+		int cur=0;
+		for(i=0;i<(int)mapping.size();i++)
+		{
+			if(mapping[i]==1)
+			{
+				fprintf(fpp,"%c",acc[cur]);
+				cur++;
+			}
+			else
+			{
+				fprintf(fpp,"-");
+			}
+		}
+		fprintf(fpp,"\n");
 		fclose(fpp);
 	}
 	//output ACC_Value
@@ -320,7 +632,22 @@ void Output_Protein_Features_ACC(
 	}
 	else
 	{
-		for(i=0;i<moln;i++)fprintf(fpp,"%3d %3d\n",acc_surface->AC_normal[i],acc_surface->AC_output[i]);
+		int cur=0;
+		for(i=0;i<(int)mapping.size();i++)
+		{
+			if(mapping[i]==1)
+			{
+				char c=ami[cur];
+				fprintf(fpp,"%4d %c %3d %3d\n",i+1,c,acc_surface->AC_normal[cur],acc_surface->AC_output[cur]);
+				cur++;
+			}
+			else
+			{
+				char c='-';
+				if(miss_seq!="")c=miss_seq[i];
+				fprintf(fpp,"%4d %c   -   -\n",i+1,c);
+			}
+		}
 		fclose(fpp);
 	}
 }
@@ -354,7 +681,8 @@ int ACC_To_Int(char c)
 //----- output protein features -----//
 void Output_Protein_Features(
 	string &outroot,string &outname,Acc_Surface *acc_surface,XYZ *mol,XYZ *mcb,
-	int moln,PDB_Residue *pdb,XYZ **mcc,int *mcc_side,char *ami,char *acc)
+	int moln,PDB_Residue *pdb,XYZ **mcc,int *mcc_side,char *ami,char *acc,
+	vector <int> &mapping,string &miss_seq)
 {
 	//init
 	int i,j;
@@ -459,11 +787,22 @@ void Output_Protein_Features(
 	else
 	{
 		fprintf(fpp,"  Num Res  Missing   SSE    CLE   ACC   pACC  CNa CNb   Xca       Yca       Zca       Xcb       Ycb       Zcb\n");
-		for(i=0;i<moln;i++)
+		int cur=0;
+		for(i=0;i<(int)mapping.size();i++)
 		{
-			char c=ACC_To_Int(acc[i]);
-			fprintf(fpp,"%4d   %c      0       %c      %c     %1d    %3d  %2d  %2d   %8.3f  %8.3f  %8.3f  %8.3f  %8.3f  %8.3f\n",
-				i+1,AMI[i],SSE[i],CLE[i],c,acc_surface->AC_normal[i],cn_ca[i],cn_cb[i],mol[i].X,mol[i].Y,mol[i].Z,mcb[i].X,mcb[i].Y,mcb[i].Z);
+			if(mapping[i]==1)
+			{
+				char c=ACC_To_Int(acc[cur]);
+				fprintf(fpp,"%4d   %c      0       %c      %c     %1d    %3d  %2d  %2d   %8.3f  %8.3f  %8.3f  %8.3f  %8.3f  %8.3f\n",
+					i+1,AMI[cur],SSE[cur],CLE[cur],c,acc_surface->AC_normal[cur],cn_ca[cur],cn_cb[cur],mol[cur].X,mol[cur].Y,mol[cur].Z,mcb[cur].X,mcb[cur].Y,mcb[cur].Z);
+				cur++;
+			}
+			else
+			{
+				char c='-';
+				if(miss_seq!="")c=miss_seq[i];
+				fprintf(fpp,"%4d   %c      1       L      R     2     45   0   0  \n",i+1,c);
+			}
 		}
 	}
 	fclose(fpp);
@@ -480,7 +819,8 @@ void Output_Protein_Features(
 */
 void Output_Protein_Angles(
 	string &outroot,string &outname,
-	int moln,PDB_Residue *pdb,char *ami)
+	int moln,PDB_Residue *pdb,char *ami,
+	vector <int> &mapping,string &miss_seq)
 {
 	//init
 	int i;
@@ -517,20 +857,42 @@ void Output_Protein_Angles(
 	else
 	{
 		fprintf(fpp,">POS Res  PHI        PSI       OMEGA     THETA       THOR  \n");
-		for(int i=0;i<moln;i++)
+		int cur=0;
+		for(i=0;i<(int)mapping.size();i++)
 		{
-			//print
-			stringstream os;
-			os<<setw(4)<<i + 1<<" ";
-			os<<setw(1)<<ami[i]<<" ";
-			os<<setw(10)<<phi_psi_omega_out.at(i).at(0) / M_PI * 180<<" ";
-			os<<setw(10)<<phi_psi_omega_out.at(i).at(1) / M_PI * 180<<" ";
-			os<<setw(10)<<phi_psi_omega_out.at(i).at(2) / M_PI * 180<<" ";
-			os<<setw(10)<<theta_tor_out.at(i).at(0) / M_PI * 180<<" ";
-			os<<setw(10)<<theta_tor_out.at(i).at(1) / M_PI * 180<<" ";
-			//out
-			string buf=os.str();
-			fprintf(fpp,"%s\n",buf.c_str());
+			if(mapping[i]==1)
+			{
+				//print
+				stringstream os;
+				os<<setw(4)<<i + 1<<" ";
+				os<<setw(1)<<ami[cur]<<" ";
+				os<<setw(10)<<phi_psi_omega_out.at(cur).at(0) / M_PI * 180<<" ";
+				os<<setw(10)<<phi_psi_omega_out.at(cur).at(1) / M_PI * 180<<" ";
+				os<<setw(10)<<phi_psi_omega_out.at(cur).at(2) / M_PI * 180<<" ";
+				os<<setw(10)<<theta_tor_out.at(cur).at(0) / M_PI * 180<<" ";
+				os<<setw(10)<<theta_tor_out.at(cur).at(1) / M_PI * 180<<" ";
+				//out
+				string buf=os.str();
+				fprintf(fpp,"%s\n",buf.c_str());
+				cur++;
+			}
+			else
+			{
+				char c='-';
+				if(miss_seq!="")c=miss_seq[i];
+				//print
+				stringstream os;
+				os<<setw(4)<<i + 1<<" ";
+				os<<setw(1)<<c<<" ";
+				os<<setw(10)<<" - "<<" ";
+				os<<setw(10)<<" - "<<" ";
+				os<<setw(10)<<" - "<<" ";
+				os<<setw(10)<<" - "<<" ";
+				os<<setw(10)<<" - "<<" ";
+				//out
+				string buf=os.str();
+				fprintf(fpp,"%s\n",buf.c_str());
+			}
 		}
 	}
 	fclose(fpp);
@@ -571,7 +933,8 @@ double Hydro_Bond::HB_Calc_Single(XYZ **HB_mol,int i,int j)
 
 void Output_Protein_Distances(
 	string &outroot,string &outname,Hydro_Bond *hydro_bond,
-	int moln,PDB_Residue *pdb,XYZ **mcc, int *mcc_side,char *ami)
+	int moln,PDB_Residue *pdb,XYZ **mcc, int *mcc_side,char *ami,
+	vector <int> &mapping,string &miss_seq)
 {
 	//init
 	int i,j;
@@ -591,40 +954,91 @@ void Output_Protein_Distances(
 	else
 	{
 		fprintf(fpp,">PS1  PS2 A A   CA_CA      CB_CB      HB_val      \n");
-		for(i=0;i<moln;i++)
-			for(j=0;j<moln;j++)
+		int cur1=0;
+		for(i=0;i<(int)mapping.size();i++)
+		{
+			if(mapping[i]==0)
 			{
-				//get atoms
-				XYZ ca_i,ca_j;
-				pdb[i].get_backbone_atom( "CA ",ca_i );
-				pdb[j].get_backbone_atom( "CA ",ca_j );
-				XYZ cb_i,cb_j;
-				pdb[i].get_sidechain_atom( "CB ",cb_i );
-				pdb[j].get_sidechain_atom( "CB ",cb_j );
-				//get distance
-				double distance;
-				vector <double> distances;
-				//-> Ca-Ca distance (symmetric)
-				distance=ca_i.distance(ca_j);
-				distances.push_back(distance);
-				//-> Cb-Cb distance (symmetric)
-				distance=cb_i.distance(cb_j);
-				distances.push_back(distance);
-				//-> HB value
-				double hb_val=hb_mat[i][j];
-				//print
-				stringstream os;
-				os<<setw(4)<<i + 1<<" ";
-				os<<setw(4)<<j + 1<<" ";
-				os<<setw(1)<<ami[i]<<" ";
-				os<<setw(1)<<ami[j]<<" ";
-				os<<setw(10)<<distances.at(0)<<" ";
-				os<<setw(10)<<distances.at(1)<<" ";
-				os<<setw(10)<<hb_val<<" ";
-				//out
-				string buf=os.str();
-				fprintf(fpp,"%s\n",buf.c_str());
+				for(j=0;j<(int)mapping.size();j++)
+				{
+					char c1='-';
+					if(miss_seq!="")c1=miss_seq[i];
+					char c2='-';
+					if(miss_seq!="")c2=miss_seq[j];
+					//print
+					stringstream os;
+					os<<setw(4)<<i + 1<<" ";
+					os<<setw(4)<<j + 1<<" ";
+					os<<setw(1)<<c1<<" ";
+					os<<setw(1)<<c2<<" ";
+					os<<setw(10)<<" - "<<" ";
+					os<<setw(10)<<" - "<<" ";
+					os<<setw(10)<<" - "<<" ";
+					//out
+					string buf=os.str();
+					fprintf(fpp,"%s\n",buf.c_str());
+				}
+				continue;
 			}
+			int cur2=0;
+			for(j=0;j<(int)mapping.size();j++)
+			{
+				if(mapping[j]==1)
+				{
+					//get atoms
+					XYZ ca_i,ca_j;
+					pdb[cur1].get_backbone_atom( "CA ",ca_i );
+					pdb[cur2].get_backbone_atom( "CA ",ca_j );
+					XYZ cb_i,cb_j;
+					pdb[cur1].get_sidechain_atom( "CB ",cb_i );
+					pdb[cur2].get_sidechain_atom( "CB ",cb_j );
+					//get distance
+					double distance;
+					vector <double> distances;
+					//-> Ca-Ca distance (symmetric)
+					distance=ca_i.distance(ca_j);
+					distances.push_back(distance);
+					//-> Cb-Cb distance (symmetric)
+					distance=cb_i.distance(cb_j);
+					distances.push_back(distance);
+					//-> HB value
+					double hb_val=hb_mat[cur1][cur2];
+					//print
+					stringstream os;
+					os<<setw(4)<<i + 1<<" ";
+					os<<setw(4)<<j + 1<<" ";
+					os<<setw(1)<<ami[cur1]<<" ";
+					os<<setw(1)<<ami[cur2]<<" ";
+					os<<setw(10)<<distances.at(0)<<" ";
+					os<<setw(10)<<distances.at(1)<<" ";
+					os<<setw(10)<<hb_val<<" ";
+					//out
+					string buf=os.str();
+					fprintf(fpp,"%s\n",buf.c_str());
+					cur2++;
+				}
+				else
+				{
+					char c1='-';
+					if(miss_seq!="")c1=miss_seq[i];
+					char c2='-';
+					if(miss_seq!="")c2=miss_seq[j];
+					//print
+					stringstream os;
+					os<<setw(4)<<i + 1<<" ";
+					os<<setw(4)<<j + 1<<" ";
+					os<<setw(1)<<c1<<" ";
+					os<<setw(1)<<c2<<" ";
+					os<<setw(10)<<" - "<<" ";
+					os<<setw(10)<<" - "<<" ";
+					os<<setw(10)<<" - "<<" ";
+					//out
+					string buf=os.str();
+					fprintf(fpp,"%s\n",buf.c_str());
+				}
+			}
+			cur1++;
+		}
 	}
 	fclose(fpp);
 }
@@ -924,6 +1338,12 @@ int PDB_Back_Process(string &input_dir,string &list,string &output_dir,
 			//get CB
 			for(i=0;i<moln;i++)pdb[i].get_sidechain_atom( "CB ",mcb[i] );
 
+			//get missing map
+			vector <int> mapping;
+			mapping.resize(moln);
+			for(i=0;i<moln;i++)mapping[i]=1;
+			string miss_seq="";
+
 			//output
 			FILE *fpdb;
 			file=outa+"/"+output+".pdb";
@@ -943,18 +1363,18 @@ int PDB_Back_Process(string &input_dir,string &list,string &output_dir,
 			{
 				//-> basic output
 				if(OutFifi==1 || OutFifi==3 || OutFifi==5 || OutFifi==7)
-					Output_Protein_Features_AMI_SSE_CLE(outa,output,moln,pdb);
+					Output_Protein_Features_AMI_SSE_CLE(outa,output,moln,pdb,mapping,miss_seq);
 				if(OutFifi==2 || OutFifi==3 || OutFifi==6 || OutFifi==7)
-					Output_Protein_Features_ACC(outa,output,acc_surface,moln,pdb,mcc,mcc_side,ami,acc);
+					Output_Protein_Features_ACC(outa,output,acc_surface,moln,pdb,mcc,mcc_side,ami,acc,mapping,miss_seq);
 				if(OutFifi==4 || OutFifi==5 || OutFifi==6 || OutFifi==7)
-					Output_Protein_Features(outa,output,acc_surface,mol,mcb,moln,pdb,mcc,mcc_side,ami,acc);
+					Output_Protein_Features(outa,output,acc_surface,mol,mcb,moln,pdb,mcc,mcc_side,ami,acc,mapping,miss_seq);
 				//-> additionals
 				//--| angles
 				if(OutFifi==8)
-					Output_Protein_Angles(outa,output,moln,pdb,ami);
+					Output_Protein_Angles(outa,output,moln,pdb,ami,mapping,miss_seq);
 				//--| distances
 				if(OutFifi==9)
-					Output_Protein_Distances(outa,output,hydro_bond,moln,pdb,mcc,mcc_side,ami);
+					Output_Protein_Distances(outa,output,hydro_bond,moln,pdb,mcc,mcc_side,ami,mapping,miss_seq);
 			}
 		}
 
@@ -983,7 +1403,8 @@ int PDB_Back_Process(string &input_dir,string &list,string &output_dir,
 //===================== single_process ===================//__110710__//
 //[single_style]
 void PDB_Back_Process_Single(string &input,string &range,string &output,
-	int OutType,int OutMode,int OutGlys,int OutNoca,int OutReco,int OutFifi,int OutLogf,int OutWarn)
+	int OutType,int OutMode,int OutGlys,int OutNoca,int OutReco,int OutFifi,int OutLogf,int OutWarn,
+	string &input_miss)
 {
 	//get length
 	int ret_val;
@@ -992,6 +1413,17 @@ void PDB_Back_Process_Single(string &input,string &range,string &output,
 	{
 		fprintf(stderr,"pdbfile %s length error!!\n",input.c_str());
 		exit(-1);
+	}
+	//get seqres_miss
+	string miss_seq="";
+	if(input_miss!="")
+	{
+		int miss_len=Read_FASTA_SEQRES(input_miss,miss_seq);
+		if(miss_len<=0)
+		{
+			fprintf(stderr,"input_miss %s length error!!\n",input_miss.c_str());
+			exit(-1);
+		}
 	}
 	//class
 	Mol_File mol_input;
@@ -1154,6 +1586,19 @@ void PDB_Back_Process_Single(string &input,string &range,string &output,
 			//get CB
 			for(i=0;i<moln;i++) pdb[i].get_sidechain_atom( "CB ",mcb[i] );
 
+			//get missing map
+			vector <int> mapping;
+			if(miss_seq=="")
+			{
+				mapping.resize(moln);
+				for(i=0;i<moln;i++)mapping[i]=1;
+			}
+			else
+			{
+				string AMI(ami);
+				Seqres_DynaProg(miss_seq,AMI,mapping);
+			}
+
 			//output
 			FILE *fpdb;
 			fpdb=fopen(output.c_str(),"wb");
@@ -1176,18 +1621,18 @@ void PDB_Back_Process_Single(string &input,string &range,string &output,
 				getRootName(output,outroot,'/');
 				//-> basic output
 				if(OutFifi==1 || OutFifi==3 || OutFifi==5 || OutFifi==7)
-					Output_Protein_Features_AMI_SSE_CLE(outroot,outname,moln,pdb);
+					Output_Protein_Features_AMI_SSE_CLE(outroot,outname,moln,pdb,mapping,miss_seq);
 				if(OutFifi==2 || OutFifi==3 || OutFifi==6 || OutFifi==7)
-					Output_Protein_Features_ACC(outroot,outname,acc_surface,moln,pdb,mcc,mcc_side,ami,acc);
+					Output_Protein_Features_ACC(outroot,outname,acc_surface,moln,pdb,mcc,mcc_side,ami,acc,mapping,miss_seq);
 				if(OutFifi==4 || OutFifi==5 || OutFifi==6 || OutFifi==7)
-					Output_Protein_Features(outroot,outname,acc_surface,mol,mcb,moln,pdb,mcc,mcc_side,ami,acc);
+					Output_Protein_Features(outroot,outname,acc_surface,mol,mcb,moln,pdb,mcc,mcc_side,ami,acc,mapping,miss_seq);
 				//-> additionals
 				//--| angles
 				if(OutFifi==8)
-					Output_Protein_Angles(outroot,outname,moln,pdb,ami);
+					Output_Protein_Angles(outroot,outname,moln,pdb,ami,mapping,miss_seq);
 				//--| distances
 				if(OutFifi==9)
-					Output_Protein_Distances(outroot,outname,hydro_bond,moln,pdb,mcc,mcc_side,ami);
+					Output_Protein_Distances(outroot,outname,hydro_bond,moln,pdb,mcc,mcc_side,ami,mapping,miss_seq);
 			}
 		}
 	}
@@ -1218,7 +1663,7 @@ int main(int argc, char** argv)
 		if(INPUT_FIFI!=0)INPUT_RECO=1;
 		//-> list or single
 		if(LIST_OR_SINGLE>0)PDB_Back_Process(INPUT_NAM,INPUT_LIST,INPUT_OUT,INPUT_TYPE,INPUT_MODE,INPUT_GLYS,INPUT_NOCA,INPUT_RECO,INPUT_FIFI,INPUT_LOGF,WARN_OUT);
-		else PDB_Back_Process_Single(INPUT_NAM,INPUT_RAN,INPUT_OUT,INPUT_TYPE,INPUT_MODE,INPUT_GLYS,INPUT_NOCA,INPUT_RECO,INPUT_FIFI,INPUT_LOGF,WARN_OUT);
+		else PDB_Back_Process_Single(INPUT_NAM,INPUT_RAN,INPUT_OUT,INPUT_TYPE,INPUT_MODE,INPUT_GLYS,INPUT_NOCA,INPUT_RECO,INPUT_FIFI,INPUT_LOGF,WARN_OUT,INPUT_MISS);
 		exit(0);
 	}
 }
